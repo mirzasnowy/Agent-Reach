@@ -165,3 +165,24 @@ def test_868_final_error_still_never_falls_back(monkeypatch):
     assert not out["ok"]
     assert out["error"]["code"] == "BAD_INPUT"
     search.assert_not_called()
+
+
+def test_868_paused_site_backend_still_falls_back(monkeypatch):
+    """A second search inside the opencli pause window must not lose the public route."""
+    _added_reddit()
+    calls = []
+
+    def opencli_search(self, **kwargs):
+        calls.append(1)
+        raise ReachError("UPSTREAM_BROKEN", "HTML instead of JSON")
+
+    monkeypatch.setattr(RedditChannel, "_opencli_search", opencli_search)
+    monkeypatch.setattr(WebChannel, "_exa_search", Mock(return_value=[
+        make_item(title="Python thread", url="https://www.reddit.com/r/python/comments/abc/test_post",
+                  text="A public reddit thread about python testing and mocks."),
+    ]))
+    run_action(RedditChannel(), "search", {"query": "something", "limit": 2})
+    out = run_action(RedditChannel(), "search", {"query": "something", "limit": 2})
+    assert len(calls) == 1
+    assert out["ok"] and out["backend"] == "public-web"
+    assert out["meta"]["attempts"][0]["skipped"] is True
